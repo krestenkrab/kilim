@@ -6,6 +6,8 @@
 
 package kilim.analysis;
 import static kilim.Constants.D_FIBER;
+import static kilim.Constants.D_OBJECT;
+import static kilim.Constants.D_INT;
 import static kilim.Constants.STATE_CLASS;
 import static kilim.Constants.WOVEN_FIELD;
 import static org.objectweb.asm.Opcodes.ACC_FINAL;
@@ -22,13 +24,16 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 
+import kilim.Constants;
 import kilim.KilimException;
 import kilim.mirrors.Detector;
 
 import org.objectweb.asm.Attribute;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.FieldVisitor;
 import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.FieldNode;
 import org.objectweb.asm.tree.InnerClassNode;
@@ -89,7 +94,7 @@ public class ClassWeaver {
         classFlow.analyze(false);
         if (needsWeaving() && classFlow.isPausable()) {
             boolean computeFrames = (classFlow.version & 0x00FF) >= 50;
-            ClassWriter cw = new kilim.analysis.ClassWriter(computeFrames ? ClassWriter.COMPUTE_FRAMES : 0, classFlow.detector());
+            ClassWriter cw = new kilim.analysis.ClassWriter(computeFrames ? ClassWriter.COMPUTE_FRAMES : ClassWriter.COMPUTE_MAXS, classFlow.detector());
             accept(cw);
             addClassInfo(new ClassInfo(classFlow.getClassName(), cw.toByteArray()));
         }
@@ -244,8 +249,58 @@ public class ClassWeaver {
                 mw.visitEnd();
                 // create fields of the appropriate type.
                 for (ValInfo vi : valInfoList) {
-                    cw.visitField(ACC_PUBLIC, vi.fieldName, vi.fieldDesc(), null, null);
+                    FieldVisitor fv = cw.visitField(ACC_PUBLIC, vi.fieldName, vi.fieldDesc(), null, null);
+                    fv.visitEnd();
                 }
+                
+                //
+                // static void save(Fiber fib, Object self, int pc, fields...) {
+                //    State s = new State();
+                //    s.self = self;
+                //    s.pc = pc;
+                //    store fields
+                //    fib.setState(s);
+                // }
+                //
+                StringBuffer sb = new StringBuffer("(");        
+                sb.append(D_FIBER);
+                sb.append(D_OBJECT);
+                sb.append(D_INT);
+                for (ValInfo vi : valInfoList) {
+                    sb.append(vi.fieldDesc());
+                }
+                sb.append(")V");
+                mw = cw.visitMethod(ACC_STATIC|ACC_PUBLIC, "save", sb.toString(), null, null);
+                
+                mw.visitVarInsn(ALOAD, 0);
+                
+                mw.visitTypeInsn(Opcodes.NEW, className);
+                mw.visitInsn(Opcodes.DUP);
+                mw.visitMethodInsn(Opcodes.INVOKESPECIAL, className, "<init>", "()V");
+                
+                mw.visitInsn(Opcodes.DUP);
+                mw.visitVarInsn(Opcodes.ALOAD, 1);
+                mw.visitFieldInsn(Opcodes.PUTFIELD, STATE_CLASS, "self", D_OBJECT);
+                
+                mw.visitInsn(Opcodes.DUP);
+                mw.visitVarInsn(Opcodes.ILOAD, 2);
+                mw.visitFieldInsn(Opcodes.PUTFIELD, STATE_CLASS, "pc", D_INT);
+                
+                int pos = 3;
+                for (ValInfo vi : valInfoList) {
+
+                	mw.visitInsn(Opcodes.DUP);
+                    mw.visitVarInsn(VMType.loadInsn[vi.vmt], pos);
+                    mw.visitFieldInsn(Opcodes.PUTFIELD, className, vi.fieldName, vi.fieldDesc());
+
+                    pos += VMType.category[vi.vmt];
+                }
+                
+                mw.visitMethodInsn(Opcodes.INVOKEVIRTUAL, Constants.FIBER_CLASS, "setState", "(Lkilim/State;)V");
+                mw.visitInsn(RETURN);
+                mw.visitMaxs(pos, pos);
+                mw.visitEnd();
+                
                 classInfo= new ClassInfo(className, cw.toByteArray());
                 stateClasses_.get().put(className, classInfo);
             }

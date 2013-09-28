@@ -84,6 +84,7 @@ import java.util.Collections;
 import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.TableSwitchInsnNode;
 import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.MethodInsnNode;
 
 /**
@@ -430,9 +431,15 @@ public class CallWeaver {
         LabelNode restoreLabel = new LabelNode();
         LabelNode saveLabel = new LabelNode();
         LabelNode unwindLabel = new LabelNode();
-        LabelNode[] labels = new LabelNode[] { resumeLabel, restoreLabel, saveLabel,
-                unwindLabel };
-        new TableSwitchInsnNode(0, 3, resumeLabel, labels).accept(mv);
+        if (Boolean.getBoolean("kilim.fast_codegen")) {
+            LabelNode[] labels = new LabelNode[] { resumeLabel, restoreLabel, saveLabel,
+                    unwindLabel };
+            new TableSwitchInsnNode(0, 3, resumeLabel, labels).accept(mv);
+        } else {
+            LabelNode[] labels = new LabelNode[] { restoreLabel, saveLabel,
+                    unwindLabel };
+            new TableSwitchInsnNode(1, 3, resumeLabel, labels).accept(mv);
+        }
         genSave(mv, saveLabel);
         genUnwind(mv, unwindLabel);
         genRestore(mv, restoreLabel);
@@ -494,6 +501,99 @@ public class CallWeaver {
      * @param mv
      */
     private void genSave(MethodVisitor mv, LabelNode saveLabel) {
+    	if (Boolean.getBoolean("kilim.fast_codegen")) {
+    		genSaveFast(mv, saveLabel);
+    	} else {
+    		genSaveSmall(mv, saveLabel);
+    	}
+    }
+    
+    private void genSaveSmall(MethodVisitor mv, LabelNode saveLabel) {
+        saveLabel.accept(mv);
+
+        Frame f = bb.startFrame;
+        // pop return value if any.
+        String retType = getReturnType(); 
+        if (retType != D_VOID) {
+            // Yielding, so the return value from the called
+            // function is a dummy value
+            mv.visitInsn(TypeDesc.isDoubleWord(retType) ? POP2 : POP);
+        }
+
+        // prepare to call StateXX.save(Fiber, self, pc, vars...)
+        
+        // first load stack into local vars
+        int i = getNumBottom() - 1;
+        for (; i >= 0; i--) {
+            Value v = f.getStack(i);
+            ValInfo vi = valInfoList.find(v);
+            if (vi == null) {
+                // it must be a constant or a duplicate, which is why we don't
+                // have any information on it. just pop it.
+                mv.visitInsn(v.category() == 2 ? POP2 : POP);
+            } else {
+                vi.save_var = allocVar(vi.val.category());
+                storeVar(mv, vi.vmt, vi.save_var);
+            }
+        }
+        
+
+        // load fiber
+        loadVar(mv, TOBJECT, methodWeaver.getFiberVar());
+        
+        // load self
+        if (bb.flow.isStatic()) {
+        	mv.visitInsn(ACONST_NULL);
+        } else {
+            mv.visitVarInsn(ALOAD, 0); // for state.self == this
+        }
+        
+        // load pc
+        int pc = methodWeaver.getPC(this);
+        if (pc < 6) {
+            mv.visitInsn(ICONST_0 + pc);
+        } else {
+            mv.visitIntInsn(BIPUSH, pc);
+        }
+
+        // now, load all vals in order of apperance in valInfoList
+        for (ValInfo vi : valInfoList) {
+        	if (vi.var != -1) {
+        		loadVar(mv, vi.vmt, vi.var);
+        	} else if (vi.save_var != -1) {
+        		loadVar(mv, vi.vmt, vi.save_var);
+        		releaseVar(vi.save_var, vi.val.category());
+        	}
+        }
+        
+        // call appropriate save method
+        StringBuffer sb = new StringBuffer("(");        
+        sb.append(D_FIBER);
+        sb.append(D_OBJECT);
+        sb.append(D_INT);
+        for (ValInfo vi : valInfoList) {
+            sb.append(vi.fieldDesc());
+        }
+        sb.append(")V");
+        
+        mv.visitMethodInsn(Opcodes.INVOKESTATIC, stateClassName, "save", sb.toString());
+        
+        // Figure out the return type of the calling method and issue the
+        // appropriate xRETURN instruction
+        retType = TypeDesc.getReturnTypeDesc(bb.flow.desc);
+        if (retType == D_VOID) {
+            mv.visitInsn(RETURN);
+        } else {
+            int vmt = VMType.toVmType(retType);
+            // ICONST_0, DCONST_0 etc.
+            mv.visitInsn(VMType.constInsn[vmt]);
+            // IRETURN, DRETURN, etc.
+            mv.visitInsn(VMType.retInsn[vmt]);
+        }
+
+    }
+    
+    private void genSaveFast(MethodVisitor mv, LabelNode saveLabel) {
         saveLabel.accept(mv);
 
         Frame f = bb.startFrame;
@@ -886,6 +986,11 @@ class ValInfo implements Comparable<ValInfo> {
      */
     int    var = -1;
 
+    /**
+     * It's a stack slot that has been loaded into a var before save.
+     */
+    int    save_var = -1;
+    
     /**
      * The value to hold. This gives us information about the type, whether the
      * value is duplicated and whether it is a constant value.
