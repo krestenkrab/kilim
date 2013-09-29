@@ -557,14 +557,19 @@ public class CallWeaver {
         }
 
         // now, load all vals in order of apperance in valInfoList
+        int stackDepth = 3;
         for (ValInfo vi : valInfoList) {
         	if (vi.var != -1) {
         		loadVar(mv, vi.vmt, vi.var);
+        		stackDepth += VMType.category[vi.vmt];
         	} else if (vi.save_var != -1) {
         		loadVar(mv, vi.vmt, vi.save_var);
         		releaseVar(vi.save_var, vi.val.category());
+        		stackDepth += VMType.category[vi.vmt];
         	}
         }
+        
+        methodWeaver.ensureMaxStack( stackDepth );
         
         // call appropriate save method
         StringBuffer sb = new StringBuffer("(");        

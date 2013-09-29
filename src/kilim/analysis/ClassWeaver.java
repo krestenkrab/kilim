@@ -94,7 +94,7 @@ public class ClassWeaver {
         classFlow.analyze(false);
         if (needsWeaving() && classFlow.isPausable()) {
             boolean computeFrames = (classFlow.version & 0x00FF) >= 50;
-            ClassWriter cw = new kilim.analysis.ClassWriter(computeFrames ? ClassWriter.COMPUTE_FRAMES : ClassWriter.COMPUTE_MAXS, classFlow.detector());
+            ClassWriter cw = new kilim.analysis.ClassWriter(computeFrames ? ClassWriter.COMPUTE_FRAMES : 0, classFlow.detector());
             accept(cw);
             addClassInfo(new ClassInfo(classFlow.getClassName(), cw.toByteArray()));
         }
