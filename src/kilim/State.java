@@ -27,4 +27,15 @@ package kilim;
 public class State {
     public int pc;
     public Object self;
+    
+    //
+    // All subclasses have a static method like this one, which
+    // has arguments for all the variables
+    //
+    public static void save(Fiber fib, Object self, int pc) {
+    	State s = new State();
+    	s.self = self;
+    	s.pc = pc;
+    	fib.setState(s);
+    }
 }
