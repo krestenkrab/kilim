@@ -81,6 +81,7 @@ import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Collections;
 
+import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.TableSwitchInsnNode;
 import org.objectweb.asm.MethodVisitor;
@@ -263,7 +264,7 @@ public class CallWeaver {
      */
     int getNumArgs() {
         if (numArgs == -1) {
-            numArgs = TypeDesc.getNumArgumentTypes(getMethodInsn().desc)
+            numArgs = TypeDesc.getNumArgumentTypes(Utils.getDescriptor( getMethodInsn() ))
                     + (isStaticCall() ? 0 : 1);
         }
         return numArgs;
@@ -273,8 +274,8 @@ public class CallWeaver {
         return getMethodInsn().getOpcode() == INVOKESTATIC;
     }
 
-    final MethodInsnNode getMethodInsn() {
-        return (MethodInsnNode) bb.getInstruction(bb.startPos);
+    final AbstractInsnNode getMethodInsn() {
+        return bb.getInstruction(bb.startPos);
     }
 
     int getNumBottom() {
@@ -385,12 +386,13 @@ public class CallWeaver {
         mv.visitLabel(callLabel.getLabel());
         loadVar(mv, TOBJECT, methodWeaver.getFiberVar());
         mv.visitMethodInsn(INVOKEVIRTUAL, FIBER_CLASS, "down", "()" + D_FIBER);
-        MethodInsnNode mi = getMethodInsn();
-        if (mi.desc.indexOf(fiberArg) == -1) {
+        AbstractInsnNode mi = getMethodInsn();
+        String descriptor = Utils.getDescriptor(mi);
+		if (descriptor.indexOf(fiberArg) == -1) {
             // Don't add another fiberarg if it already has one. It'll already
             // have one if we have copied jsr instructions and modified the 
             // same instruction node earlier. 
-            mi.desc = mi.desc.replace(")", fiberArg);
+			mi = Utils.setDescriptor(mi, descriptor.replace(")", fiberArg));
         }
         mi.accept(mv);
     }
@@ -484,7 +486,7 @@ public class CallWeaver {
     }
 
     private String getReturnType() {
-        return TypeDesc.getReturnTypeDesc(getMethodInsn().desc);
+        return TypeDesc.getReturnTypeDesc( Utils.getDescriptor( getMethodInsn() ));
     }
 
     /**
@@ -846,8 +848,7 @@ public class CallWeaver {
     }
 
     private String getReceiverTypename() {
-        MethodInsnNode min = getMethodInsn();
-        return min.owner;
+    	return Utils.getOwner(getMethodInsn());
     }
 
     /**

@@ -47,7 +47,6 @@ import org.objectweb.asm.tree.JumpInsnNode;
 import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.LookupSwitchInsnNode;
-import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MultiANewArrayInsnNode;
 import org.objectweb.asm.tree.TableSwitchInsnNode;
 import org.objectweb.asm.tree.TypeInsnNode;
@@ -342,11 +341,12 @@ public class BasicBlock implements Comparable<BasicBlock> {
                     hasFollower = false;
                     break;
 
+                case INVOKEDYNAMIC:
                 case INVOKEVIRTUAL:
                 case INVOKESTATIC:
                 case INVOKEINTERFACE:
                 case INVOKESPECIAL:
-                    if (flow.isPausableMethodInsn((MethodInsnNode) ain)) {
+                    if (flow.isPausableMethodInsn(ain)) {
                         LabelNode il = flow.getOrCreateLabelAtPos(pos);
                         if (pos == startPos) {
                             setFlag(PAUSABLE);
@@ -947,12 +947,11 @@ public class BasicBlock implements Comparable<BasicBlock> {
                     case INVOKESTATIC:
                     case INVOKEINTERFACE:
                         // pop args, push return value
-                        MethodInsnNode min = ((MethodInsnNode) ain);
-                        String desc = min.desc;
-                        if (flow.isPausableMethodInsn(min) && frame.numMonitorsActive > 0) {
+                        String desc = Utils.getDescriptor(ain);
+                        if (flow.isPausableMethodInsn(ain) && frame.numMonitorsActive > 0) {
                             throw new KilimException("Error: Can not call pausable nethods from within a synchronized block\n" +
                                     "Caller: " + this.flow.classFlow.name.replace('/', '.') + "." + this.flow.name + this.flow.desc +
-                                    "\nCallee: " + ((MethodInsnNode)ain).name); 
+                                    "\nCallee: " + (Utils.getName(ain))); 
                         }
                         canThrowException = true;
                         frame.popn(TypeDesc.getNumArgumentTypes(desc));
@@ -1463,8 +1462,7 @@ public class BasicBlock implements Comparable<BasicBlock> {
     public boolean isGetCurrentTask() {
         AbstractInsnNode ain = getInstruction(startPos);
         if (ain.getOpcode() == INVOKESTATIC) {
-            MethodInsnNode min = (MethodInsnNode)ain;
-            return min.owner.equals(TASK_CLASS) && min.name.equals("getCurrentTask");
+            return Utils.getOwner(ain).equals(TASK_CLASS) && Utils.getName(ain).equals("getCurrentTask");
         }
         return false;
     }

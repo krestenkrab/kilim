@@ -6,6 +6,10 @@
 
 package kilim.analysis;
 
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.InvokeDynamicInsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+
 /**
  * Simple string utils for pretty printing support
  *
@@ -75,4 +79,55 @@ public class Utils {
     public static void pn(Object o) {
         pn((o == null) ? "null" : o.toString());
     }
+
+	public static String getName(AbstractInsnNode ain) {
+		if (ain instanceof MethodInsnNode) {
+			MethodInsnNode min = (MethodInsnNode)ain;
+			return min.name;
+		} else if (ain instanceof InvokeDynamicInsnNode) {
+			InvokeDynamicInsnNode idi = (InvokeDynamicInsnNode) ain;
+			return idi.name;
+		} else {
+			throw new InternalError();
+		}
+	}
+
+	public static String getOwner(AbstractInsnNode ain) {
+		if (ain instanceof MethodInsnNode) {
+			MethodInsnNode min = (MethodInsnNode)ain;
+			return min.owner;
+		} else if (ain instanceof InvokeDynamicInsnNode) {
+			InvokeDynamicInsnNode idi = (InvokeDynamicInsnNode) ain;
+			return idi.bsm.getOwner();
+		} else {
+			throw new InternalError();
+		}
+	}
+
+	public static String getDescriptor(AbstractInsnNode ain) {
+		if (ain instanceof MethodInsnNode) {
+			MethodInsnNode min = (MethodInsnNode)ain;
+			return min.desc;
+		} else if (ain instanceof InvokeDynamicInsnNode) {
+			InvokeDynamicInsnNode idi = (InvokeDynamicInsnNode) ain;
+			return idi.desc;
+		} else {
+			throw new InternalError();
+		}
+	}
+
+	public static AbstractInsnNode setDescriptor(AbstractInsnNode ain,
+			String descriptor) {
+		if (ain instanceof MethodInsnNode) {
+			MethodInsnNode min = (MethodInsnNode)ain;
+			min.desc = descriptor;
+		} else if (ain instanceof InvokeDynamicInsnNode) {
+			InvokeDynamicInsnNode idi = (InvokeDynamicInsnNode) ain;
+			idi.desc = descriptor;
+		} else {
+			throw new InternalError();
+		}
+		
+		return ain;
+	}
 }

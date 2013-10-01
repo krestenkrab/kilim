@@ -26,6 +26,7 @@ import kilim.KilimException;
 import kilim.mirrors.Detector;
 
 import org.objectweb.asm.AnnotationVisitor;
+import org.objectweb.asm.Handle;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
@@ -33,6 +34,8 @@ import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.FrameNode;
 import org.objectweb.asm.tree.InsnList;
+import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.LineNumberNode;
 import org.objectweb.asm.tree.MethodInsnNode;
@@ -83,7 +86,7 @@ public class MethodFlow extends MethodNode {
     private boolean hasPausableAnnotation;
     private boolean suppressPausableCheck;
 
-    private List<MethodInsnNode> pausableMethods = new LinkedList<MethodInsnNode>();
+    private List<AbstractInsnNode> pausableMethods = new LinkedList<AbstractInsnNode>();
     
 	private final Detector detector;
 
@@ -169,8 +172,14 @@ public class MethodFlow extends MethodNode {
             } else { 
                 msg = name + " should be marked pausable. It calls pausable methods\n";
             }
-            for (MethodInsnNode min: pausableMethods) {
-                msg += toString(min.owner, min.name, min.desc) + '\n';
+            for (AbstractInsnNode in: pausableMethods) {
+            	if (in instanceof MethodInsnNode) {
+            		MethodInsnNode min = (MethodInsnNode)in;
+            		msg += toString(min.owner, min.name, min.desc) + '\n';
+            	} else if (in instanceof InvokeDynamicInsnNode) {
+            		InvokeDynamicInsnNode min = (InvokeDynamicInsnNode)in;
+            		msg += toString(min.bsm.getOwner(), min.name, min.desc) + '\n';
+            	} 
             }
             throw new KilimException(msg);
         }
@@ -204,6 +213,21 @@ public class MethodFlow extends MethodNode {
         return className.replace('/', '.') + '.' + methName + desc;
     }
     
+    
+    @Override
+    public void visitInvokeDynamicInsn(String name, String desc, Handle bsm,
+            Object... bsmArgs)
+    {
+        super.visitInvokeDynamicInsn(name, desc, bsm, bsmArgs);
+    	
+        if (!classFlow.isWoven) {
+            int methodStatus = detector.getPausableStatus(bsm.getOwner(), name, desc);
+            if (methodStatus == Detector.PAUSABLE_METHOD_FOUND) {
+            	InvokeDynamicInsnNode min = (InvokeDynamicInsnNode)instructions.get(instructions.size()-1);
+                pausableMethods.add(min);
+            }
+        }
+    }
     
     @Override
     public void visitMethodInsn(int opcode, String owner, String name, String desc) {
@@ -282,7 +306,7 @@ public class MethodFlow extends MethodNode {
     }
     
     
-    boolean isPausableMethodInsn(MethodInsnNode min) {
+    boolean isPausableMethodInsn(AbstractInsnNode min) {
         return pausableMethods.contains(min);
     }
     
