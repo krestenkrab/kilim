@@ -201,8 +201,9 @@ public class CallWeaver {
         Frame f = bb.startFrame;
         MethodWeaver mw = methodWeaver;
         varUsage.set(mw.getFiberVar());
-        numVars = mw.getFiberVar() + 1; // knowing fiberVar is beyond anything
-                                        // that's used
+        varUsage.set(mw.getStackDepthVar());
+        numVars = mw.getStackDepthVar() + 1; // knowing fiberVar is beyond anything
+        								     // that's used
         mw.ensureMaxVars(numVars);
         Usage u = bb.usage;
         valInfoList = new ValInfoList();

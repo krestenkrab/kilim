@@ -30,6 +30,7 @@ import org.objectweb.asm.AnnotationVisitor;
 import org.objectweb.asm.Attribute;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.LocalVariableNode;
@@ -62,6 +63,7 @@ public class MethodWeaver {
      * fiberVar.
      */
     private int                   fiberVar;
+    private int                   depthVar;
     private int                   numWordsInSig;
     private ArrayList<CallWeaver> callWeavers = new ArrayList<CallWeaver>(5);
 
@@ -70,7 +72,8 @@ public class MethodWeaver {
         this.methodFlow = mf;
         isPausable = mf.isPausable();
         fiberVar =  methodFlow.maxLocals;
-        maxVars = fiberVar + 1;
+        depthVar = fiberVar + 1;
+        maxVars = fiberVar + 2;
         maxStack = methodFlow.maxStack + 1; // plus Fiber 
         if (!mf.isAbstract()) {
             createCallWeavers();
@@ -340,6 +343,12 @@ public class MethodWeaver {
             mv.visitVarInsn(ASTORE, getFiberVar());
         }
         
+        if (hasExceptionHandlers()) {
+        	mv.visitInsn(Opcodes.DUP);
+        	mv.visitMethodInsn(INVOKEVIRTUAL, FIBER_CLASS, "depth", "()I");
+        	mv.visitVarInsn(Opcodes.ISTORE, getStackDepthVar());
+        }
+        
         if (callWeavers.size() == 0) {
           // No pausable method calls, but Task.getCurrentTask() is present. 
           // We don't need the rest of the prelude.
@@ -376,7 +385,16 @@ public class MethodWeaver {
         startLabel.accept(mv);
     }
 
-    boolean isStatic() {
+    boolean hasExceptionHandlers() {
+    	for ( CallWeaver cw : this.callWeavers ) {
+    		if (!cw.getBasicBlock().handlers.isEmpty())
+    			return true;
+    	}
+    	return false;
+	}
+
+
+	boolean isStatic() {
         return methodFlow.isStatic();
     }
 
@@ -430,7 +448,8 @@ public class MethodWeaver {
         bb.startLabel.accept(mv);
         LabelNode resumeLabel = new LabelNode();
         VMType.loadVar(mv, VMType.TOBJECT, getFiberVar());
-        mv.visitMethodInsn(INVOKEVIRTUAL, FIBER_CLASS, "upEx", "()I");
+        VMType.loadVar(mv, VMType.TINT, getStackDepthVar());
+        mv.visitMethodInsn(INVOKEVIRTUAL, FIBER_CLASS, "upEx", "(I)I");
         // fiber.pc is on stack
         LabelNode[] labels = new LabelNode[cwList.size()];
         int[] keys = new int[cwList.size()];
@@ -539,6 +558,11 @@ public class MethodWeaver {
         mv.visitMaxs(stacksize, numlocals);
         mv.visitEnd();
     }
+
+
+	public int getStackDepthVar() {
+		return depthVar;
+	}
 }
 
 

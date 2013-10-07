@@ -93,6 +93,10 @@ public final class Fiber {
         task = t;
     }
 
+    public int depth() {
+    	return iStack;
+    }
+    
     public Task task() {
         return task;
     }
@@ -245,6 +249,21 @@ public final class Fiber {
     public int upEx() {
         // compute new iStack. 
         int is = task.getStackDepth() - 2; // remove upEx and convert to 0-based index. 
+        State cs = stateStack[is];
+
+        for (int i = iStack; i >= is; i--) {
+            stateStack[i] = null; // release state
+        }
+
+        iStack = is;
+        curState = cs;
+        return (cs == null) ? 0 : cs.pc;
+    }
+    
+    
+    
+    public int upEx(int index) {
+        int is = index; 
         State cs = stateStack[is];
 
         for (int i = iStack; i >= is; i--) {
